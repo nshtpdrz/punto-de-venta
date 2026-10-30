@@ -23,3 +23,9 @@ Abre la página publicada en Chrome del celular y elige **Ajustes → Instalar e
 ## Créditos
 
 - Lectura de códigos de barras: [ZXing for JS](https://github.com/zxing-js/library) (Apache License 2.0), en `lib/zxing.min.js`.
+
+## Actualizar la app
+
+La app se guarda en el celular para funcionar sin internet. Al cambiar cualquier archivo, sube también
+el número de `VERSION` en `sw.js` (por ejemplo `pdv-1.1`); así los celulares descargan la versión nueva
+la próxima vez que abran la app con internet.
