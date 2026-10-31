@@ -1,6 +1,6 @@
-# Punto de Venta
+# Tendero
 
-Punto de venta para una tiendita de abarrotes que funciona en un celular, sin internet.
+Punto de venta para tienditas de abarrotes que funciona en un celular, sin internet.
 Proyecto de upcycling: darle una segunda vida a un celular viejo como caja registradora.
 
 - **Vender:** escaneo de códigos con la cámara o con un lector USB/Bluetooth, búsqueda por nombre,

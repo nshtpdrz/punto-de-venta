@@ -1,7 +1,7 @@
 /* Punto de Venta para tiendita — funciona sin internet, todo se guarda en el celular (IndexedDB).
    Pantallas: Vender, Inventario, Caja (turnos y cortes), Reportes, Ajustes. */
 'use strict';
-const VERSION = '1.2';
+const VERSION = '2.0';
 
 /* ============================== utilidades ============================== */
 const $ = (id) => document.getElementById(id);
@@ -74,7 +74,7 @@ async function guardarProducto(p) {
 }
 
 /* ============================== ajustes ============================== */
-const AJ_DEF = { nombre: 'Mi Tiendita', dir: '', tel: '', pie: '¡Gracias por su compra!', impresora: false, ancho: 32, respaldo: 0 };
+const AJ_DEF = { nombre: 'Mi Tiendita', dir: '', tel: '', pie: '¡Gracias por su compra!', impresora: false, ancho: 32, respaldo: 0, listo: false, pin: '' };
 let aj = Object.assign({}, AJ_DEF, JSON.parse(localStorage.getItem('pdv.ajustes') || '{}'));
 const guardarAjustes = () => localStorage.setItem('pdv.ajustes', JSON.stringify(aj));
 
@@ -88,7 +88,24 @@ function ir(nombre) {
   window.scrollTo(0, 0);
   ({ vender: pintarVender, inventario: pintarInventario, caja: pintarCaja, reportes: pintarReportes, ajustes: pintarAjustes })[nombre]();
 }
-document.querySelector('nav').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) ir(b.dataset.ir); });
+document.querySelector('nav').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (['reportes', 'ajustes'].includes(b.dataset.ir) && !await pedirPin()) return;
+  ir(b.dataset.ir);
+});
+/* PIN del dueño: pide el PIN y lo recuerda 5 minutos */
+let pinHasta = 0;
+async function hashPin(p) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('tendero:' + p));
+  return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+async function pedirPin() {
+  if (!aj.pin || Date.now() < pinHasta) return true;
+  const n = await pedirNumero('PIN del dueño', 'Escribe tu PIN. Si lo olvidaste, escribe el teléfono de la tienda registrado en Ajustes.', '', 'numeric');
+  if (n === null) return false;
+  if (await hashPin(String(n)) === aj.pin || (aj.tel && String(n) === aj.tel.replace(/\D/g, ''))) { pinHasta = Date.now() + 5 * 60000; return true; }
+  pitido(false); aviso('PIN incorrecto'); return false;
+}
 
 /* ============================== ventanas ============================== */
 function ventana(html, alAbrir) {
@@ -127,6 +144,7 @@ async function iniciarCamara(destino) {
   camara.destino = destino;
   if (camara.activa) return;
   $('camaraCaja').classList.remove('oculto');
+  $('btnCamara').textContent = 'Cerrar cámara'; $('btnCamara').classList.add('activo');
   $('camaraEstado').textContent = 'Abriendo cámara…';
   const video = $('video');
   try {
@@ -169,6 +187,7 @@ function detenerCamara() {
   if (camara.stream) { camara.stream.getTracks().forEach((t) => t.stop()); camara.stream = null; }
   const v = $('video'); v.srcObject = null;
   $('camaraCaja').classList.add('oculto');
+  $('btnCamara').textContent = 'Escanear código'; $('btnCamara').classList.remove('activo');
 }
 function pausarCamara() { camara.pausada = true; }
 function reanudarCamara() { camara.pausada = false; }
@@ -215,7 +234,7 @@ async function agregar(p, cant) {
   if (l) l.cant += cant;
   else carrito.push({ id: p.id, nombre: p.nombre, precio: p.precio, costo: p.costo || 0, unidad: p.unidad, cant });
   guardarCarrito(); pintarCarrito();
-  if (p.existencias - cant < 0 && p.unidad !== 'kg') aviso(`Ojo: según el inventario no hay suficientes «${p.nombre}».`);
+  if (p.minimo > 0 && p.existencias - cant < 0) aviso(`Ojo: según el inventario no hay suficientes «${p.nombre}».`);
 }
 function leerParaVenta(codigo) {
   const p = porCodigo.get(codigo);
@@ -234,7 +253,7 @@ function pintarRapidos() {
 $('rapidos').addEventListener('click', (e) => { const b = e.target.closest('[data-id]'); if (b) { const p = productos.find((x) => x.id === b.dataset.id); if (p) agregar(p); } });
 function pintarCarrito() {
   const ul = $('carrito');
-  if (!carrito.length) ul.innerHTML = '<li class="vacio">Escanea o busca productos para empezar la venta.</li>';
+  if (!carrito.length) ul.innerHTML = '<li class="vacio">Escanea un producto para empezar.</li>';
   else ul.innerHTML = carrito.map((l, i) => `<li>
       <div class="nom"><div>${esc(l.nombre)}</div><div class="suave chico-t">${$$(l.precio)}${l.unidad === 'kg' ? ' / kg' : ''}</div></div>
       <div class="cant">${l.unidad === 'kg'
@@ -243,6 +262,7 @@ function pintarCarrito() {
       <div class="importe mono">${$$(l.precio * l.cant)}</div></li>`).join('');
   const n = carrito.reduce((s, l) => s + (l.unidad === 'kg' ? 1 : l.cant), 0);
   $('numArticulos').textContent = n ? `· ${n} artículo${n === 1 ? '' : 's'}` : '';
+  $('btnVaciar').classList.toggle('oculto', !carrito.length);
   $('total').textContent = $$(totalCarrito());
   $('btnCobrar').disabled = !carrito.length;
 }
@@ -356,6 +376,7 @@ function textoTicket(v) {
   if (v.cancelada) r.push('', centro('*** VENTA CANCELADA ***'));
   r.push(linea);
   if (aj.pie) r.push(centro(aj.pie));
+  r.push(centro('No es comprobante fiscal'));
   return r.join('\n');
 }
 const sinAcentos = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¡¿]/g, '');
@@ -375,7 +396,7 @@ function mostrarTicket(v, recien = false) {
     <pre class="ticket">${esc(txt)}</pre>
     <div class="fila"><button data-a="wa">WhatsApp</button>${aj.impresora ? '<button data-a="imp">Imprimir</button>' : ''}</div>
     ${!recien && !v.cancelada ? '<button data-a="cancelar" class="peligro" style="width:100%;margin-top:8px">Cancelar esta venta</button>' : ''}
-    <div class="acciones"><button data-a="ok" class="primario">${recien ? 'Nueva venta' : 'Cerrar'}</button></div>`, (w) => {
+    <div class="acciones"><button data-a="ok" class="primario">${recien ? 'Siguiente venta' : 'Cerrar'}</button></div>`, (w) => {
     w.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'wa') compartir(txt);
@@ -386,6 +407,7 @@ function mostrarTicket(v, recien = false) {
   });
 }
 async function cancelarVenta(v) {
+  if (!await pedirPin()) return;
   if (!await confirmar('¿Cancelar la venta #' + v.id + '?', 'Se regresan los productos al inventario y la venta deja de contar en la caja y los reportes.', 'Cancelar venta', true)) return;
   v.cancelada = Date.now(); await guardar('ventas', v);
   for (const i of v.items) { const p = productos.find((x) => x.id === i.id); if (p) { p.existencias = redondear(p.existencias + i.cant); await guardar('productos', p); } }
@@ -395,17 +417,19 @@ async function cancelarVenta(v) {
 
 /* ============================== INVENTARIO ============================== */
 let filtroInv = 'todos';
+// solo avisan los productos con cantidad mínima; tortillas, pan, etc. no llevan control de existencias
+const porAgotarse = (p) => p.minimo > 0 && p.existencias <= p.minimo;
 function etiquetaExist(p) {
   const e = cantTxt(p.existencias, p.unidad);
-  if (p.existencias <= 0) return `<span class="etiqueta cero">Sin existencias</span>`;
+  if (p.minimo > 0 && p.existencias <= 0) return `<span class="etiqueta cero">Agotado</span>`;
   if (p.minimo > 0 && p.existencias <= p.minimo) return `<span class="etiqueta baja">Quedan ${e}</span>`;
   return `<span class="etiqueta">${e}</span>`;
 }
 function pintarInventario() {
   let lista = $('buscarInv').value.trim() ? buscar($('buscarInv').value) : productos.slice();
-  if (filtroInv === 'bajos') lista = lista.filter((p) => p.existencias <= 0 || (p.minimo > 0 && p.existencias <= p.minimo));
+  if (filtroInv === 'bajos') lista = lista.filter(porAgotarse);
   if (filtroInv === 'fav') lista = lista.filter((p) => p.favorito);
-  const bajos = productos.filter((p) => p.existencias <= 0 || (p.minimo > 0 && p.existencias <= p.minimo)).length;
+  const bajos = productos.filter(porAgotarse).length;
   const valor = productos.reduce((s, p) => s + Math.max(0, p.existencias) * (p.costo || 0), 0);
   $('resumenInv').textContent = `${productos.length} productos · ${bajos} por agotarse · inventario a costo: ${$$(valor)}`;
   $('listaInv').innerHTML = lista.length ? lista.slice(0, 300).map((p) => `<li data-id="${esc(p.id)}">
@@ -476,7 +500,7 @@ function editarProducto(p, alGuardar, titulo) {
 /* entrada de mercancía: escanear o buscar y sumar existencias */
 $('btnEntrada').addEventListener('click', () => entradaMercancia());
 function entradaMercancia() {
-  const w = ventana(`<h3>Entrada de mercancía</h3><p class="suave">Escanea o busca lo que llegó del proveedor y escribe cuántas piezas (o kilos) entraron.</p>
+  const w = ventana(`<h3>Surtir mercancía</h3><p class="suave">Escanea o busca lo que llegó del proveedor y escribe cuántas piezas (o kilos) entraron.</p>
     <div class="fila"><input id="eBuscar" type="search" placeholder="Buscar o escribir código…" autofocus><button class="no-crece" id="eCamara">Escanear</button></div>
     <ul class="lista" id="eLista"></ul><div class="acciones"><button data-r="0" class="primario">Terminar</button></div>`, (v) => {
     const pintar = () => { const r = buscar($('eBuscar').value).slice(0, 20); $('eLista').innerHTML = r.map((p) => `<li data-id="${esc(p.id)}"><div class="nom"><div>${esc(p.nombre)}</div><div class="suave chico-t">${etiquetaExist(p)}</div></div><button class="chico">+ Entrada</button></li>`).join(''); };
@@ -502,6 +526,7 @@ async function cargarTurno() {
 function pintarEncabezado() {
   $('nombreTienda').textContent = aj.nombre || 'Mi Tiendita';
   $('estadoCaja').textContent = turnoActual ? 'Caja abierta' : 'Caja cerrada';
+  $('avisoCaja').classList.toggle('oculto', !!turnoActual);
 }
 async function abrirCaja() {
   const n = await pedirNumero('Abrir caja', '¿Con cuánto efectivo empiezas? (el fondo para dar cambio)', '', 'decimal');
@@ -512,6 +537,8 @@ async function abrirCaja() {
   return true;
 }
 $('btnAbrirCaja').addEventListener('click', abrirCaja);
+$('avisoCaja').addEventListener('click', abrirCaja);
+$('estadoCaja').addEventListener('click', () => ir('caja'));
 async function ventasDeTurno(id) {
   let r; await tx('ventas', 'readonly', (t) => { pedir(t.objectStore('ventas').index('turno').getAll(id)).then((x) => { r = x; }); }); return r;
 }
@@ -635,7 +662,8 @@ function pintarAjustes() {
   $('aNombre').value = aj.nombre; $('aDir').value = aj.dir; $('aTel').value = aj.tel; $('aPie').value = aj.pie;
   $('aImpresora').checked = !!aj.impresora; $('aAncho').value = String(aj.ancho);
   $('ultimoRespaldo').textContent = aj.respaldo ? 'Último respaldo: ' + fechaHora(aj.respaldo) : 'Todavía no has guardado ningún respaldo.';
-  $('version').textContent = 'Punto de Venta ' + VERSION + ' · funciona sin internet · tus datos se guardan solo en este celular';
+  $('version').textContent = 'Tendero ' + VERSION + ' · funciona sin internet · tus datos se guardan solo en este celular';
+  $('btnPin').textContent = aj.pin ? 'Quitar PIN' : 'Poner PIN';
 }
 $('btnGuardarAjustes').addEventListener('click', () => {
   Object.assign(aj, { nombre: $('aNombre').value.trim() || 'Mi Tiendita', dir: $('aDir').value.trim(), tel: $('aTel').value.trim(), pie: $('aPie').value.trim() });
@@ -679,6 +707,7 @@ $('btnBorrarTodo').addEventListener('click', async () => {
   if (!await confirmar('¿Borrar TODOS los datos?', 'Se borran productos, ventas y cortes de este celular. Haz un respaldo antes. No se puede deshacer.', 'Borrar todo', true)) return;
   if (prompt('Para confirmar escribe BORRAR') !== 'BORRAR') return;
   await tx(['productos', 'ventas', 'turnos'], 'readwrite', (t) => { for (const a of ['productos', 'ventas', 'turnos']) t.objectStore(a).clear(); });
+  aj.listo = false; aj.pin = ''; guardarAjustes();
   carrito = []; guardarCarrito(); await iniciar(); aviso('Datos borrados');
 });
 $('btnEjemplo').addEventListener('click', async () => {
@@ -710,9 +739,63 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.ser
 /* pedir al navegador que no borre los datos aunque falte espacio */
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
+
+/* ============================== LISTA DE PEDIDO ============================== */
+$('btnPedido').addEventListener('click', () => {
+  const faltan = productos.filter(porAgotarse);
+  const sug = (p) => Math.max(1, Math.ceil((p.minimo || 1) * 2 - Math.max(0, p.existencias)));
+  const txt = ['Pedido de ' + aj.nombre, ''].concat(faltan.map((p) => `${sug(p)} ${p.unidad === 'kg' ? 'kg' : 'pz'} - ${p.nombre}`)).join('\n');
+  ventana(`<h3>Lista de pedido</h3><p class="suave">${faltan.length ? faltan.length + ' productos por surtir, con cantidad sugerida.' : 'No hay productos por agotarse.'}</p>
+    <ul class="lista">${faltan.map((p) => `<li><div class="nom"><div>${esc(p.nombre)}</div><div class="suave chico-t">Hay ${cantTxt(p.existencias, p.unidad)}</div></div><div class="importe mono">${sug(p)} ${p.unidad === 'kg' ? 'kg' : 'pz'}</div></li>`).join('')}</ul>
+    <div class="acciones"><button data-a="ok">Cerrar</button><button data-a="wa" class="primario" ${faltan.length ? '' : 'disabled'}>Enviar</button></div>`, (w) => w.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'wa') compartir(txt); else cerrarVentana();
+  }));
+});
+
+/* ============================== PIN ============================== */
+$('btnPin').addEventListener('click', async () => {
+  if (aj.pin) { aj.pin = ''; guardarAjustes(); pintarAjustes(); aviso('PIN quitado'); return; }
+  const n = await pedirNumero('Poner PIN', 'Elige un PIN de 4 dígitos o más. Registra también el teléfono de la tienda: sirve para entrar si lo olvidas.', '', 'numeric');
+  if (n === null) return;
+  if (String(n).length < 4) { aviso('El PIN debe tener al menos 4 dígitos'); return; }
+  aj.pin = await hashPin(String(n)); guardarAjustes(); pinHasta = Date.now() + 5 * 60000; pintarAjustes(); aviso('PIN guardado');
+});
+
+/* ============================== BIENVENIDA ============================== */
+function bienvenida() {
+  ventana(`<h3>Bienvenido a Tendero</h3><p class="suave">Tu caja e inventario en este celular, sin internet. Empecemos con los datos de tu tienda.</p>
+    <label for="wNombre">Nombre de la tienda</label><input id="wNombre" placeholder="Ej. Abarrotes Lupita" autofocus>
+    <label for="wTel">Teléfono o WhatsApp</label><input id="wTel" inputmode="tel" placeholder="Opcional">
+    <div class="acciones"><button data-r="1" class="primario">Continuar</button></div>`, (w) => w.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-r]')) return;
+    const nombre = $('wNombre').value.trim();
+    if (!nombre) { aviso('Escribe el nombre de tu tienda'); return; }
+    aj.nombre = nombre; aj.tel = $('wTel').value.trim(); guardarAjustes(); pintarEncabezado();
+    bienvenida2();
+  }));
+}
+function bienvenida2() {
+  ventana(`<h3>¿Cómo quieres empezar?</h3><p class="suave">Los productos con código se dan de alta solos: los escaneas una vez y escribes su precio.</p>
+    <button data-w="basicos" class="primario" style="width:100%;margin-bottom:8px">Con productos básicos</button>
+    <p class="suave chico-t">Agrega tortillas, huevo, frijol, azúcar, bolillo y dulces como botones rápidos, con precios que puedes cambiar.</p>
+    <button data-w="vacio" style="width:100%">Empezar vacío</button>`, (w) => w.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-w]'); if (!b) return;
+    if (b.dataset.w === 'basicos') await cargarSueltos();
+    aj.listo = true; guardarAjustes(); cerrarVentana(); ir('vender');
+  }));
+}
+async function cargarSueltos() {
+  const t0 = Date.now(), L = [['Tortillas', 'Tortillería', 24, 18, 'kg'], ['Huevo', 'Abarrotes', 48, 40, 'kg'], ['Frijol', 'Granel', 38, 30, 'kg'], ['Azúcar', 'Granel', 30, 24, 'kg'], ['Bolillo', 'Panadería', 3, 2, 'pz'], ['Dulce suelto', 'Dulces', 2, 1, 'pz']];
+  for (let i = 0; i < L.length; i++) { const [nombre, categoria, precio, costo, unidad] = L[i];
+    await guardar('productos', { id: 'p' + (t0 + 200 + i).toString(36), codigo: '', nombre, categoria, precio, costo, existencias: 0, minimo: 0, unidad, favorito: true, creado: t0 }); }
+  await cargarProductos();
+}
+
 /* ============================== inicio ============================== */
 async function iniciar() {
   await cargarProductos(); await cargarTurno(); pintarEncabezado(); ir(pantalla);
+  if (!aj.listo) { if (productos.length) { aj.listo = true; guardarAjustes(); } else { bienvenida(); return; } }
   // recordatorio de respaldo si hay ventas y pasaron más de 7 días
   if (productos.length && (!aj.respaldo || Date.now() - aj.respaldo > 7 * 86400000)) setTimeout(() => aviso('Recuerda guardar un respaldo en Ajustes', 3500), 1500);
 }
