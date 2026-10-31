@@ -1,7 +1,7 @@
 /* Punto de Venta para tiendita — funciona sin internet, todo se guarda en el celular (IndexedDB).
    Pantallas: Vender, Inventario, Caja (turnos y cortes), Reportes, Ajustes. */
 'use strict';
-const VERSION = '1.1';
+const VERSION = '1.2';
 
 /* ============================== utilidades ============================== */
 const $ = (id) => document.getElementById(id);
@@ -294,7 +294,7 @@ $('btnCobrar').addEventListener('click', async () => {
   const total = totalCarrito();
   let metodo = 'efectivo';
   const v = ventana(`<h3>Cobrar</h3><div class="grande mono">${$$(total)}</div>
-    <div class="metodos"><button data-m="efectivo" class="activo">💵 Efectivo</button><button data-m="tarjeta">💳 Tarjeta</button><button data-m="transferencia">📲 Transfer.</button></div>
+    <div class="metodos"><button data-m="efectivo" class="activo">Efectivo</button><button data-m="tarjeta">Tarjeta</button><button data-m="transferencia">Transfer.</button></div>
     <div id="zonaEfectivo"><label for="vRecibido">¿Con cuánto paga?</label><input id="vRecibido" type="number" inputmode="decimal" step="any" placeholder="${total.toFixed(2)}" autofocus>
       <div class="billetes">${[0, 20, 50, 100, 200, 500].map((b) => `<button data-b="${b}">${b ? '$' + b : 'Exacto'}</button>`).join('')}</div>
       <div class="grande mono" id="vCambio" style="font-size:24px">Cambio: $0.00</div></div>
@@ -370,10 +370,10 @@ async function compartir(texto) {
 }
 function mostrarTicket(v, recien = false) {
   const txt = textoTicket(v);
-  ventana(`<h3>${recien ? '✅ Venta registrada' : 'Ticket #' + v.id}</h3>
-    ${recien && v.metodo === 'efectivo' ? `<div class="grande mono" style="color:var(--exito)">Cambio: ${$$(v.cambio)}</div>` : ''}
+  ventana(`<h3>${recien ? 'Venta registrada' : 'Ticket #' + v.id}</h3>
+    ${recien && v.metodo === 'efectivo' ? `<div class="grande mono" style="color:var(--verde)">Cambio: ${$$(v.cambio)}</div>` : ''}
     <pre class="ticket">${esc(txt)}</pre>
-    <div class="fila"><button data-a="wa">💬 Enviar por WhatsApp</button>${aj.impresora ? '<button data-a="imp">🖨 Imprimir</button>' : ''}</div>
+    <div class="fila"><button data-a="wa">WhatsApp</button>${aj.impresora ? '<button data-a="imp">Imprimir</button>' : ''}</div>
     ${!recien && !v.cancelada ? '<button data-a="cancelar" class="peligro" style="width:100%;margin-top:8px">Cancelar esta venta</button>' : ''}
     <div class="acciones"><button data-a="ok" class="primario">${recien ? 'Nueva venta' : 'Cerrar'}</button></div>`, (w) => {
     w.addEventListener('click', async (e) => {
@@ -409,7 +409,7 @@ function pintarInventario() {
   const valor = productos.reduce((s, p) => s + Math.max(0, p.existencias) * (p.costo || 0), 0);
   $('resumenInv').textContent = `${productos.length} productos · ${bajos} por agotarse · inventario a costo: ${$$(valor)}`;
   $('listaInv').innerHTML = lista.length ? lista.slice(0, 300).map((p) => `<li data-id="${esc(p.id)}">
-      <div class="nom"><div>${p.favorito ? '⭐ ' : ''}${esc(p.nombre)}</div><div class="suave chico-t">${esc(p.codigo || 'sin código')}${p.categoria ? ' · ' + esc(p.categoria) : ''}</div></div>
+      <div class="nom"><div>${p.favorito ? '<b>★</b> ' : ''}${esc(p.nombre)}</div><div class="suave chico-t">${esc(p.codigo || 'sin código')}${p.categoria ? ' · ' + esc(p.categoria) : ''}</div></div>
       <div style="text-align:right"><div class="mono" style="font-weight:600">${$$(p.precio)}${p.unidad === 'kg' ? '/kg' : ''}</div>${etiquetaExist(p)}</div></li>`).join('')
     : `<li class="vacio">${productos.length ? 'Nada coincide.' : 'Aún no hay productos. Toca «+ Producto» o escanea uno nuevo desde Vender.'}</li>`;
 }
@@ -433,7 +433,7 @@ function editarProducto(p, alGuardar, titulo) {
   pausarCamara();
   const w = ventana(`<h3>${esc(titulo || (nuevo ? 'Nuevo producto' : 'Editar producto'))}</h3>
     <label for="fNombre">Nombre</label><input id="fNombre" value="${esc(p.nombre || '')}" placeholder="Ej. Leche entera 1 L" autofocus>
-    <label for="fCodigo">Código de barras</label><div class="fila"><input id="fCodigo" value="${esc(p.codigo || '')}" inputmode="numeric" placeholder="Opcional"><button class="no-crece" id="fEscanear">📷</button></div>
+    <label for="fCodigo">Código de barras</label><div class="fila"><input id="fCodigo" value="${esc(p.codigo || '')}" inputmode="numeric" placeholder="Opcional"><button class="no-crece" id="fEscanear">Escanear</button></div>
     <div class="fila"><div><label for="fPrecio">Precio de venta</label><input id="fPrecio" type="number" inputmode="decimal" step="any" value="${p.precio ?? ''}"></div>
       <div><label for="fCosto">Costo (lo que te cuesta)</label><input id="fCosto" type="number" inputmode="decimal" step="any" value="${p.costo ?? ''}"></div></div>
     <div class="fila"><div><label for="fExist">Existencias</label><input id="fExist" type="number" inputmode="decimal" step="any" value="${p.existencias ?? 0}"></div>
@@ -476,8 +476,8 @@ function editarProducto(p, alGuardar, titulo) {
 /* entrada de mercancía: escanear o buscar y sumar existencias */
 $('btnEntrada').addEventListener('click', () => entradaMercancia());
 function entradaMercancia() {
-  const w = ventana(`<h3>📦 Entrada de mercancía</h3><p class="suave">Escanea o busca lo que llegó del proveedor y escribe cuántas piezas (o kilos) entraron.</p>
-    <div class="fila"><input id="eBuscar" type="search" placeholder="Buscar o escribir código…" autofocus><button class="no-crece" id="eCamara">📷</button></div>
+  const w = ventana(`<h3>Entrada de mercancía</h3><p class="suave">Escanea o busca lo que llegó del proveedor y escribe cuántas piezas (o kilos) entraron.</p>
+    <div class="fila"><input id="eBuscar" type="search" placeholder="Buscar o escribir código…" autofocus><button class="no-crece" id="eCamara">Escanear</button></div>
     <ul class="lista" id="eLista"></ul><div class="acciones"><button data-r="0" class="primario">Terminar</button></div>`, (v) => {
     const pintar = () => { const r = buscar($('eBuscar').value).slice(0, 20); $('eLista').innerHTML = r.map((p) => `<li data-id="${esc(p.id)}"><div class="nom"><div>${esc(p.nombre)}</div><div class="suave chico-t">${etiquetaExist(p)}</div></div><button class="chico">+ Entrada</button></li>`).join(''); };
     $('eBuscar').addEventListener('input', pintar);
@@ -580,7 +580,7 @@ function textoCorte(t) {
 function mostrarCorte(t) {
   const txt = textoCorte(t);
   ventana(`<h3>Corte de caja</h3><pre class="ticket">${esc(txt)}</pre>
-    <div class="fila"><button data-a="wa">💬 Compartir</button>${aj.impresora ? '<button data-a="imp">🖨 Imprimir</button>' : ''}</div>
+    <div class="fila"><button data-a="wa">Compartir</button>${aj.impresora ? '<button data-a="imp">Imprimir</button>' : ''}</div>
     <div class="acciones"><button data-a="ok" class="primario">Listo</button></div>`, (w) => w.addEventListener('click', (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'wa') compartir(txt); if (b.dataset.a === 'imp') imprimir(txt); if (b.dataset.a === 'ok') cerrarVentana();
