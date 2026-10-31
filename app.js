@@ -1,7 +1,7 @@
 /* Punto de Venta para tiendita — funciona sin internet, todo se guarda en el celular (IndexedDB).
    Pantallas: Vender, Inventario, Caja (turnos y cortes), Reportes, Ajustes. */
 'use strict';
-const VERSION = '2.0';
+const VERSION = '2.0.1';
 
 /* ============================== utilidades ============================== */
 const $ = (id) => document.getElementById(id);
