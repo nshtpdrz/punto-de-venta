@@ -1,5 +1,5 @@
 /* Service worker: guarda la app en el celular para que abra sin internet. Cambia VERSION al actualizar archivos. */
-const VERSION = 'pdv-1.0';
+const VERSION = 'pdv-1.1';
 const ARCHIVOS = ['./', 'index.html', 'app.js', 'lib/zxing.min.js', 'manifest.webmanifest', 'iconos/icono-192.png', 'iconos/icono-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ARCHIVOS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {

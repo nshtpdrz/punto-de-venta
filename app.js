@@ -1,7 +1,7 @@
 /* Punto de Venta para tiendita — funciona sin internet, todo se guarda en el celular (IndexedDB).
    Pantallas: Vender, Inventario, Caja (turnos y cortes), Reportes, Ajustes. */
 'use strict';
-const VERSION = '1.0';
+const VERSION = '1.1';
 
 /* ============================== utilidades ============================== */
 const $ = (id) => document.getElementById(id);
@@ -94,8 +94,7 @@ document.querySelector('nav').addEventListener('click', (e) => { const b = e.tar
 function ventana(html, alAbrir) {
   const capa = $('capaVentana');
   capa.innerHTML = `<div class="velo"><div class="ventana">${html}</div></div>`;
-  const velo = capa.firstElementChild;
-  velo.addEventListener('click', (e) => { if (e.target === velo) cerrarVentana(); });
+  const velo = capa.firstElementChild;   // no se cierra al tocar fuera: se perderían datos o una lectura por accidente
   if (alAbrir) alAbrir(velo.firstElementChild);
   const f = velo.querySelector('[autofocus]'); if (f) setTimeout(() => f.focus(), 50);
   return velo.firstElementChild;
@@ -134,15 +133,16 @@ async function iniciarCamara(destino) {
     if ('BarcodeDetector' in window) {
       const formatos = await BarcodeDetector.getSupportedFormats();
       camara.detector = new BarcodeDetector({ formats: formatos.filter((f) => ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'].includes(f)) });
-      camara.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+      camara.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
       video.srcObject = camara.stream; await video.play();
+      await acercar(camara.stream);
       camara.activa = true;
       const ciclo = async () => {
         if (!camara.activa) return;
         if (!camara.pausada && video.readyState >= 2) {
           try { const r = await camara.detector.detect(video); if (r.length) codigoLeido(r[0].rawValue); } catch (e) { /* sigue */ }
         }
-        camara.timer = setTimeout(ciclo, 180);
+        camara.timer = setTimeout(ciclo, 90);
       };
       ciclo();
     } else {
@@ -155,6 +155,13 @@ async function iniciarCamara(destino) {
     detenerCamara();
     aviso(e && e.name === 'NotAllowedError' ? 'Da permiso de cámara en el navegador para escanear.' : 'No se pudo abrir la cámara.', 3500);
   }
+}
+// zoom 2x: los códigos chicos tienen más puntos y el celular puede quedar más lejos, donde enfoca mejor
+async function acercar(stream) {
+  try {
+    const t = stream.getVideoTracks()[0], c = t.getCapabilities ? t.getCapabilities() : {};
+    if (c.zoom) await t.applyConstraints({ advanced: [{ zoom: Math.min(2, c.zoom.max) }] });
+  } catch (e) { /* sin zoom también funciona */ }
 }
 function detenerCamara() {
   camara.activa = false; clearTimeout(camara.timer);
@@ -170,6 +177,7 @@ function codigoLeido(codigo) {
   const t = Date.now();
   if (codigo === camara.ultimo && t - camara.ultimoT < 1500) return;   // el mismo código seguido = una sola lectura
   camara.ultimo = codigo; camara.ultimoT = t;
+  $('camaraEstado').textContent = 'Código leído: ' + codigo;
   if (ventanaAbierta()) return;
   if (camara.destino) camara.destino(codigo);
 }
